@@ -311,10 +311,15 @@ let fly=null,flyAt=0,flyDone=false;          // the butterfly: one visit per gam
 let boltT=0,boltNext=0,boltPath=null,boltFlash=0;   // storm lightning (stage 3)
 /* props are drawn 1.5x their original size; level geometry is untouched */
 const OBJ=1.5;
-/* the hallucination: the background comes apart as a stage's mushroom count
-   climbs toward HAL_AT. 0 = sober, 1 = fully melted. */
-const HAL_AT=10;
-let stageShrooms=0, HAL=0;
+/* The hallucination: the background comes apart late in a stage, once most of
+   its mushrooms are eaten. Measured as a FRACTION of what the stage actually
+   holds rather than a fixed count, because the stages are not the same size —
+   the meadow carries about 22 mushrooms but the deep only 6 to 10, so any
+   fixed threshold high enough to feel late in the meadow could never be
+   reached in the deep. Nothing happens below HAL_FROM; fully melted by
+   HAL_FULL. 0 = sober, 1 = fully melted. */
+const HAL_FROM=.55, HAL_FULL=.92;
+let stageShrooms=0, stageTotal=0, HAL=0;
 
 function P(x,y,w,h,o){
   const q=Object.assign({x,y,w,h},o||{});
@@ -562,6 +567,7 @@ function loadStage(i){
   BUILDERS[i]();
   bossSpawned=false;
   stageShrooms=0;HAL=0;          // each stage starts sober
+  stageTotal=shrooms.length;     // how many this stage laid down, for the ramp
   $('lvl').textContent='Stage '+(i+1)+' of 5';
   $('nm').textContent=S.n;
   $('bb').classList.remove('on');
@@ -1669,7 +1675,8 @@ function draw(){
   shakeY=shakeMag?(Math.random()-.5)*shakeMag*2:0;
   /* how far into the hallucination this stage is, and the quickened clock the
      backdrops run on because of it */
-  HAL=Math.min(1,stageShrooms/HAL_AT);
+  const eaten=stageTotal?stageShrooms/stageTotal:0;
+  HAL=Math.max(0,Math.min(1,(eaten-HAL_FROM)/(HAL_FULL-HAL_FROM)));
   TB=t*(1+HAL*1.8);
   if(MODE==='side')(stage===1?bgForest():bgMeadow());else if(MODE==='up')bgCanopy();
   else if(MODE==='down')bgDownpour();else bgDeep();

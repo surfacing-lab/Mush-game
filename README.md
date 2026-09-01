@@ -75,8 +75,9 @@ butterfly passes through and steals a mushroom — catch it and you'll see thing
 
 ## The hallucination
 
-Every stage starts sober. As the mushrooms you've eaten *in that stage* climb
-toward ten, the backdrop starts to come apart:
+Every stage starts sober, and stays that way for most of it. Only once you've
+eaten more than half of a stage's mushrooms does the backdrop start to come
+apart, and it doesn't fully melt until you're nearly through them all:
 
 - the whole backdrop speeds up, running on a clock that quickens with the trip
 - a colour wash breathes across the sky, cycling hue
@@ -84,8 +85,22 @@ toward ten, the backdrop starts to come apart:
   in you are
 - past the halfway mark a slow spiral winds up behind everything
 
-At ten mushrooms it's fully melted. The count resets each time you enter a new
-stage, so every stage takes you up again from nothing.
+The threshold is a *fraction* of what the stage holds, not a fixed count —
+stages aren't the same size. The meadow carries around 22 mushrooms while the
+deep has only 6 to 10, so any fixed number high enough to feel late in the
+meadow could never be reached in the deep. In practice:
+
+| Stage | Mushrooms | First flicker | Fully melted |
+|---|---|---|---|
+| The Meadow | ~25 | 14 | 23 |
+| The Forest | ~22 | 13 | 21 |
+| The Canopy | ~23 | 13 | 22 |
+| The Downpour | ~19 | 11 | 18 |
+| The Deep | ~10 | 6 | 10 |
+
+The count resets each time you enter a new stage, so every stage takes you up
+again from nothing. Both thresholds are the `HAL_FROM` and `HAL_FULL`
+constants — lower them to trip earlier, raise them to trip later still.
 
 The effect is drawn over the backdrop but *under* the world, so platforms,
 mushrooms and both players stay readable no matter how far gone the sky is. It
