@@ -73,6 +73,25 @@ Edible mushrooms are **1 point**. Haloed ones are **2 points** and grant a power
 Two haloed mushrooms in a row **reverses your controls**. Somewhere in the run a
 butterfly passes through and steals a mushroom — catch it and you'll see things.
 
+## The hallucination
+
+Every stage starts sober. As the mushrooms you've eaten *in that stage* climb
+toward ten, the backdrop starts to come apart:
+
+- the whole backdrop speeds up, running on a clock that quickens with the trip
+- a colour wash breathes across the sky, cycling hue
+- rings push outward from the middle of the screen, wobbling harder the deeper
+  in you are
+- past the halfway mark a slow spiral winds up behind everything
+
+At ten mushrooms it's fully melted. The count resets each time you enter a new
+stage, so every stage takes you up again from nothing.
+
+The effect is drawn over the backdrop but *under* the world, so platforms,
+mushrooms and both players stay readable no matter how far gone the sky is. It
+renders into a quarter-size buffer that's stretched back over the canvas — the
+upscale is what softens it, and it keeps the whole thing running at 60fps.
+
 ## Notes
 
 The only external resource is the Google Fonts stylesheet for *Bagel Fat One* and
