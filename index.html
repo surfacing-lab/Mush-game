@@ -309,6 +309,12 @@ let camX=0,camY=0,edge=0,edgeOn=false,t=0,phase='title',flash=0,shakeMag=0,shake
 let stageDone=[false,false,false,false,false],transition=0,bannerT=0;
 let fly=null,flyAt=0,flyDone=false;          // the butterfly: one visit per game
 let boltT=0,boltNext=0,boltPath=null,boltFlash=0;   // storm lightning (stage 3)
+/* props are drawn 1.5x their original size; level geometry is untouched */
+const OBJ=1.5;
+/* the hallucination: the background comes apart as a stage's mushroom count
+   climbs toward HAL_AT. 0 = sober, 1 = fully melted. */
+const HAL_AT=10;
+let stageShrooms=0, HAL=0;
 
 function P(x,y,w,h,o){
   const q=Object.assign({x,y,w,h},o||{});
@@ -555,6 +561,7 @@ function loadStage(i){
   minions=[];tentacles=[];slime=[];walls=[];boss=null;gate=null;arena=null;
   BUILDERS[i]();
   bossSpawned=false;
+  stageShrooms=0;HAL=0;          // each stage starts sober
   $('lvl').textContent='Stage '+(i+1)+' of 5';
   $('nm').textContent=S.n;
   $('bb').classList.remove('on');
@@ -973,8 +980,8 @@ function step(d){
       if(ax<-215||ax>215||ay<-215||ay>215)return;
       const dd=Math.hypot(ax,ay);
       if(p.pw==='magnet'&&dd<205&&dd>2){o.x+=(cx-o.x)/dd*3.6*d;o.y+=(cy-o.y)/dd*3.6*d;}
-      if(dd<26+(p.big?10:0)){
-        o.got=true;
+      if(dd<26*OBJ+(p.big?10:0)){
+        o.got=true;stageShrooms++;
         const gained=(o.s.psy?2:1)*(p.pw==='glow'?2:1);
         p.score+=gained;bumpScore(k);p.combo=(p.combo||0)+1;
         if(o.s.psy){sfx.psy(k);p.trip++;scorePop(cx,cy-22,gained,300);
@@ -1055,13 +1062,103 @@ function step(d){
 }
 
 /* ================= RENDER ================= */
+/* Background clock. Every stage's backdrop animates off TB rather than t, so
+   the whole backdrop quickens as the hallucination takes hold. */
+let TB=0;
+
+/* A slow ambient drift laid over every stage, so no backdrop is ever static
+   even when both players are standing still. Sober it is barely there; it
+   swells and saturates with HAL. */
+function bgDrift(hue){
+  ctx.save();ctx.globalCompositeOperation='lighter';
+  const n=4+Math.round(HAL*3);
+  for(let i=0;i<n;i++){
+    const ph=TB*.0045+i*1.7;
+    const dx=W*.5+Math.sin(ph)*(W*.42)+Math.sin(ph*2.3+i)*(60+HAL*120);
+    const dy=H*.5+Math.cos(ph*.83+i)*(H*.40)+Math.cos(ph*1.9)*(40+HAL*90);
+    const r=140+i*46+Math.sin(TB*.011+i)*(26+HAL*70);
+    const g=ctx.createRadialGradient(dx,dy,0,dx,dy,r);
+    g.addColorStop(0,`hsla(${(hue+i*47+TB*(.35+HAL*2.2))%360},${70+HAL*30}%,${58+HAL*10}%,${.085+HAL*.135})`);
+    g.addColorStop(1,'hsla(0,0%,0%,0)');
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(dx,dy,r,0,7);ctx.fill();
+  }
+  ctx.restore();
+}
+
+/* The hallucination itself: as a stage's mushroom count climbs toward ten the
+   backdrop breathes, tears into rings and finally floods with colour. Drawn
+   over the backdrop but under the world, so the level stays readable.
+
+   It renders into a quarter-size buffer that is then stretched back over the
+   canvas. The upscale blurs it for free, which is both softer than a canvas
+   shadow and vastly cheaper — blurring these strokes directly costs about
+   three quarters of the frame budget. */
+const HSC=4;
+const HCV=document.createElement('canvas');
+HCV.width=Math.ceil(W/HSC);HCV.height=Math.ceil(H/HSC);
+const hx=HCV.getContext('2d');
+function drawHallucination(){
+  if(HAL<=0)return;
+  const k=HAL;
+  hx.setTransform(1,0,0,1,0,0);
+  hx.clearRect(0,0,HCV.width,HCV.height);
+  hx.setTransform(1/HSC,0,0,1/HSC,0,0);   // draw in full-canvas coordinates
+  hx.lineJoin='round';hx.lineCap='round';
+
+  // 1. breathing colour wash
+  const wash=hx.createLinearGradient(0,0,W,H);
+  wash.addColorStop(0,`hsla(${(TB*1.6)%360},100%,60%,${.05*k})`);
+  wash.addColorStop(.5,`hsla(${(TB*1.6+120)%360},100%,60%,${.08*k})`);
+  wash.addColorStop(1,`hsla(${(TB*1.6+240)%360},100%,60%,${.05*k})`);
+  hx.fillStyle=wash;hx.fillRect(0,0,W,H);
+
+  // 2. concentric rings pushing out from the middle of the screen
+  const cx=W/2+Math.sin(TB*.008)*90, cy=H/2+Math.cos(TB*.0065)*60;
+  hx.lineWidth=7+k*9;
+  for(let i=0;i<7;i++){
+    const phase=(TB*.9+i*70)%520;
+    const r=phase*(.9+k*.5);
+    const fade=(1-phase/520)*k*.55;
+    if(fade<=0)continue;
+    hx.strokeStyle=`hsla(${(TB*2.4+i*52)%360},100%,68%,${fade})`;
+    hx.beginPath();
+    // the ring wobbles harder the deeper in you are
+    for(let a=0;a<=32;a++){
+      const ang=a/32*Math.PI*2;
+      const wob=1+Math.sin(ang*(3+i%3)+TB*.05+i)*.06*k*3;
+      const px=cx+Math.cos(ang)*r*wob, py=cy+Math.sin(ang)*r*.62*wob;
+      a?hx.lineTo(px,py):hx.moveTo(px,py);
+    }
+    hx.closePath();hx.stroke();
+  }
+
+  // 3. a slow spiral that only shows up once it is really going
+  if(k>.45){
+    const s=(k-.45)/.55;
+    hx.globalAlpha=s*.34;hx.lineWidth=5+s*7;
+    hx.strokeStyle=`hsl(${(TB*3.2)%360},100%,72%)`;
+    hx.beginPath();
+    for(let a=0;a<190;a++){
+      const ang=a*.16+TB*.02, rr=a*1.9*(1+Math.sin(TB*.03)*.08);
+      const px=cx+Math.cos(ang)*rr, py=cy+Math.sin(ang)*rr*.6;
+      a?hx.lineTo(px,py):hx.moveTo(px,py);
+    }
+    hx.stroke();hx.globalAlpha=1;
+  }
+
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  ctx.imageSmoothingEnabled=true;
+  ctx.drawImage(HCV,0,0,W,H);
+  ctx.restore();
+}
 function bgMeadow(){
-  const h=(t*.35)%360;
+  const h=(TB*.35)%360;
   const g=ctx.createLinearGradient(0,0,0,H);
   g.addColorStop(0,`hsl(${h},58%,15%)`);g.addColorStop(.55,`hsl(${(h+50)%360},52%,10%)`);
   g.addColorStop(1,`hsl(${(h+110)%360},60%,15%)`);ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
   ctx.globalCompositeOperation='lighter';
-  for(let i=0;i<5;i++){const px=((i*430-camX*.18)%(W+700)+W+700)%(W+700)-350,y=150+Math.sin(t*.01+i)*70,r=150+i*30;
+  for(let i=0;i<5;i++){const px=((i*430-camX*.18)%(W+700)+W+700)%(W+700)-350,y=150+Math.sin(TB*.01+i)*70,r=150+i*30;
     const rd=ctx.createRadialGradient(px,y,0,px,y,r);
     rd.addColorStop(0,`hsla(${(h+i*62)%360},95%,62%,.17)`);rd.addColorStop(1,'hsla(0,0%,0%,0)');
     ctx.fillStyle=rd;ctx.beginPath();ctx.arc(px,y,r,0,7);ctx.fill();}
@@ -1078,7 +1175,8 @@ function bgForest(){
   // shafts of morning light through the canopy
   ctx.save();ctx.globalCompositeOperation='lighter';
   for(let i=0;i<5;i++){
-    const sx=60+i*200-((camX*.06)%200);
+    // the shafts sway, so the forest breathes even when nobody is moving
+    const sx=60+i*200-((camX*.06)%200)+Math.sin(TB*.004+i*1.3)*30;
     const gg=ctx.createLinearGradient(sx,0,sx+120,H);
     gg.addColorStop(0,'rgba(214,255,196,.11)');gg.addColorStop(1,'rgba(0,0,0,0)');
     ctx.fillStyle=gg;ctx.beginPath();
@@ -1114,11 +1212,11 @@ function bgForest(){
   // drifting needles and leaves
   ctx.save();
   for(let i=0;i<20;i++){
-    const lx=((i*127 - camX*.55 + Math.sin(t*.012+i)*45)%(W+60)+W+60)%(W+60)-30;
-    const ly=((i*191 + t*.5)%(H+70)+H+70)%(H+70)-35;
+    const lx=((i*127 - camX*.55 + Math.sin(TB*.012+i)*45)%(W+60)+W+60)%(W+60)-30;
+    const ly=((i*191 + TB*.5)%(H+70)+H+70)%(H+70)-35;
     ctx.globalAlpha=.3;
     ctx.fillStyle=`hsl(${72+(i%5)*16},42%,${40+(i%4)*8}%)`;
-    ctx.beginPath();ctx.ellipse(lx,ly,5,2.2,Math.sin(t*.03+i)*1.5,0,7);ctx.fill();
+    ctx.beginPath();ctx.ellipse(lx,ly,5,2.2,Math.sin(TB*.03+i)*1.5,0,7);ctx.fill();
   }
   ctx.restore();
 }
@@ -1154,17 +1252,17 @@ function bgCanopy(){
   /* leaf litter drifting down through the shafts of light */
   ctx.save();
   for(let i=0;i<16;i++){
-    const lx=((i*97 - camX*.5 + Math.sin(t*.01+i)*40)%(W+60)+W+60)%(W+60)-30;
-    const ly=((i*163 + t*.55 - camY*.6)%(H+80)+H+80)%(H+80)-40;
+    const lx=((i*97 - camX*.5 + Math.sin(TB*.01+i)*40)%(W+60)+W+60)%(W+60)-30;
+    const ly=((i*163 + TB*.55 - camY*.6)%(H+80)+H+80)%(H+80)-40;
     ctx.globalAlpha=.30;
     ctx.fillStyle=`hsl(${95+ (i%5)*14},45%,${38+(i%4)*7}%)`;
-    ctx.beginPath();ctx.ellipse(lx,ly,5,3,Math.sin(t*.03+i)*1.4,0,7);ctx.fill();
+    ctx.beginPath();ctx.ellipse(lx,ly,5,3,Math.sin(TB*.03+i)*1.4,0,7);ctx.fill();
   }
   ctx.restore();
   /* light falling from the canopy far above */
   ctx.save();ctx.globalCompositeOperation='lighter';
   for(let i=0;i<4;i++){
-    const sx=120+i*250+Math.sin(t*.005+i)*50;
+    const sx=120+i*250+Math.sin(TB*.005+i)*50;
     const gg=ctx.createLinearGradient(sx,0,sx+70,H);
     gg.addColorStop(0,'rgba(196,255,190,.13)');gg.addColorStop(1,'rgba(0,0,0,0)');
     ctx.fillStyle=gg;ctx.fillRect(sx,0,110,H);
@@ -1185,8 +1283,8 @@ function bgDownpour(){
   ctx.save();ctx.strokeStyle='rgba(190,222,255,.5)';ctx.lineWidth=1.3;ctx.lineCap='round';
   for(let i=0;i<120;i++){
     const sp=14+(i%6)*3.5;
-    const rx=((i*149-t*3.2)%(W+240)+W+240)%(W+240)-120;
-    const ry=((i*223+t*sp)%(H+160)+H+160)%(H+160)-80;
+    const rx=((i*149-TB*3.2)%(W+240)+W+240)%(W+240)-120;
+    const ry=((i*223+TB*sp)%(H+160)+H+160)%(H+160)-80;
     ctx.beginPath();ctx.moveTo(rx,ry);ctx.lineTo(rx-5,ry+19);ctx.stroke();}
   ctx.restore();}
 function bgDeep(){
@@ -1195,7 +1293,7 @@ function bgDeep(){
   for(let i=0;i<11;i++){
     const gx=((i*237-camX*.06)%(W+400)+W+400)%(W+400)-200;
     const gy=((i*179-camY*.06)%(H+300)+H+300)%(H+300)-150;
-    const r=60+i*16+Math.sin(t*.014+i)*12;
+    const r=60+i*16+Math.sin(TB*.014+i)*34;
     const rd=ctx.createRadialGradient(gx,gy,0,gx,gy,r);
     rd.addColorStop(0,`hsla(${(170+i*22)%360},95%,52%,.13)`);rd.addColorStop(1,'hsla(0,0%,0%,0)');
     ctx.fillStyle=rd;ctx.beginPath();ctx.arc(gx,gy,r,0,7);ctx.fill();}
@@ -1203,8 +1301,8 @@ function bgDeep(){
   // drifting motes
   ctx.fillStyle='rgba(160,240,255,.35)';
   for(let i=0;i<40;i++){
-    const mx=((i*97-camX*.3+t*.4)%(W+40)+W+40)%(W+40)-20;
-    const my=((i*61-camY*.3+Math.sin(t*.02+i)*20)%(H+40)+H+40)%(H+40)-20;
+    const mx=((i*97-camX*.3+TB*.4)%(W+40)+W+40)%(W+40)-20;
+    const my=((i*61-camY*.3+Math.sin(TB*.02+i)*20)%(H+40)+H+40)%(H+40)-20;
     ctx.beginPath();ctx.arc(mx,my,1.4,0,7);ctx.fill();}}
 
 /* ---------- stage 2: one colossal climbing vine ---------- */
@@ -1336,7 +1434,9 @@ function slab(p,i){
     for(let fx=Math.ceil(from/34)*34; fx<to; fx+=34){
       const sd=(fx*7919+Math.floor(x))%997, r=(sd%100)/100;
       const sway=Math.sin(t*.024+sd)*2.4;
-      const hgt=11+ (sd%9);
+      /* meadow blooms are ankle-height wildflowers, not mushroom-sized:
+         kept well under the 57px mushroom sprites they sit beside */
+      const hgt=7+ (sd%6);
       // grass blades
       ctx.strokeStyle='rgba(96,186,104,.85)';ctx.lineWidth=1.8;ctx.lineCap='round';
       for(let b=-1;b<2;b++){
@@ -1345,18 +1445,18 @@ function slab(p,i){
       }
       if(r<.45)continue;                       // not every tuft flowers
       // stem
-      ctx.strokeStyle='rgba(78,164,86,.95)';ctx.lineWidth=2;
+      ctx.strokeStyle='rgba(78,164,86,.95)';ctx.lineWidth=1.3;
       ctx.beginPath();ctx.moveTo(fx,y+1);
-      ctx.quadraticCurveTo(fx+sway*.5,y-hgt*.7,fx+sway,y-hgt-6);ctx.stroke();
+      ctx.quadraticCurveTo(fx+sway*.5,y-hgt*.7,fx+sway,y-hgt-4);ctx.stroke();
       // bloom
-      const hue=(sd*3.6)%360, cxp=fx+sway, cyp=y-hgt-7;
+      const hue=(sd*3.6)%360, cxp=fx+sway, cyp=y-hgt-4.5;
       for(let pt=0;pt<5;pt++){
         const a=pt/5*Math.PI*2+t*.004+sd;
         ctx.fillStyle=`hsl(${hue},85%,${68+(pt%2)*8}%)`;
-        ctx.beginPath();ctx.ellipse(cxp+Math.cos(a)*3.6,cyp+Math.sin(a)*3.6,3.4,2.4,a,0,7);ctx.fill();
+        ctx.beginPath();ctx.ellipse(cxp+Math.cos(a)*2,cyp+Math.sin(a)*2,1.9,1.3,a,0,7);ctx.fill();
       }
       ctx.fillStyle=`hsl(${(hue+45)%360},95%,62%)`;
-      ctx.beginPath();ctx.arc(cxp,cyp,2.1,0,7);ctx.fill();
+      ctx.beginPath();ctx.arc(cxp,cyp,1.15,0,7);ctx.fill();
     }
   }
   if(p.leafy){ctx.fillStyle='rgba(60,150,90,.7)';
@@ -1424,8 +1524,8 @@ function drawEarth(p,i){
 function drawGate(){
   if(!gate)return;
   ctx.save();ctx.translate(gate.x+18,gate.y+26);
-  for(let i=5;i>=1;i--){const r=i*8+Math.sin(t*.06+i)*2.4;ctx.rotate(t*.012*(i%2?1:-1));
-    ctx.strokeStyle=`hsl(${(t*2.4+i*48)%360},96%,66%)`;ctx.lineWidth=3;
+  for(let i=5;i>=1;i--){const r=(i*8+Math.sin(t*.06+i)*2.4)*OBJ;ctx.rotate(t*.012*(i%2?1:-1));
+    ctx.strokeStyle=`hsl(${(t*2.4+i*48)%360},96%,66%)`;ctx.lineWidth=3*OBJ;
     ctx.shadowColor=ctx.strokeStyle;ctx.shadowBlur=16;
     ctx.beginPath();ctx.ellipse(0,0,r*.72,r,0,0,7);ctx.stroke();}
   ctx.restore();ctx.shadowBlur=0;}
@@ -1567,8 +1667,14 @@ function drawPlayer(p){
 function draw(){
   shakeX=shakeMag?(Math.random()-.5)*shakeMag*2:0;
   shakeY=shakeMag?(Math.random()-.5)*shakeMag*2:0;
+  /* how far into the hallucination this stage is, and the quickened clock the
+     backdrops run on because of it */
+  HAL=Math.min(1,stageShrooms/HAL_AT);
+  TB=t*(1+HAL*1.8);
   if(MODE==='side')(stage===1?bgForest():bgMeadow());else if(MODE==='up')bgCanopy();
   else if(MODE==='down')bgDownpour();else bgDeep();
+  bgDrift([88,140,120,205,185][stage]||120);
+  drawHallucination();
   ctx.save();ctx.translate(-camX+shakeX,-camY+shakeY);
   const L=camX-90,R=camX+W+90,TP=camY-120,BT=camY+H+120;
   pools.forEach(q=>{
@@ -1609,14 +1715,14 @@ function draw(){
     if(o.got||o.x<L||o.x>R||o.y>BT||o.y<TP)return;
     const y=o.y+Math.sin(t*.07+o.ph)*3;
     if(o.s.psy){ctx.save();ctx.translate(o.x,y);ctx.rotate(t*.03);
-      for(let i=0;i<3;i++){ctx.strokeStyle=`hsl(${(t*4+i*120)%360},100%,68%)`;ctx.lineWidth=2.2;
+      for(let i=0;i<3;i++){ctx.strokeStyle=`hsl(${(t*4+i*120)%360},100%,68%)`;ctx.lineWidth=2.2*OBJ;
         ctx.shadowColor=ctx.strokeStyle;ctx.shadowBlur=15;
-        ctx.beginPath();ctx.ellipse(0,0,25-i*4,21-i*4,i*1.1,0,7);ctx.stroke();}
+        ctx.beginPath();ctx.ellipse(0,0,(25-i*4)*OBJ,(21-i*4)*OBJ,i*1.1,0,7);ctx.stroke();}
       ctx.restore();ctx.shadowBlur=0;}
     else{const hu=(t*2+o.x)%360;ctx.fillStyle=`hsla(${hu},100%,72%,.26)`;
       ctx.shadowColor=`hsl(${hu},100%,66%)`;ctx.shadowBlur=15;
-      ctx.beginPath();ctx.arc(o.x,y,15,0,7);ctx.fill();ctx.shadowBlur=0;}
-    if(o.s.img.complete&&o.s.img.naturalWidth)ctx.drawImage(o.s.img,o.x-19,y-20,38,38);});
+      ctx.beginPath();ctx.arc(o.x,y,15*OBJ,0,7);ctx.fill();ctx.shadowBlur=0;}
+    if(o.s.img.complete&&o.s.img.naturalWidth)ctx.drawImage(o.s.img,o.x-19*OBJ,y-20*OBJ,38*OBJ,38*OBJ);});
   minions.forEach(drawMinion);
   if(boss){if(boss.kind==='snail')drawSnail(boss);else if(boss.kind==='roach')drawRoach(boss);else drawAnglerfish(boss);}
   parts.forEach(q=>{ctx.globalAlpha=q.life;ctx.fillStyle=`hsl(${q.hue},100%,70%)`;
