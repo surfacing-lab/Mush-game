@@ -91,6 +91,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 
@@ -174,7 +175,7 @@ const wallTex = canvasTex(1024, 512, (g, w, h) => {
 /* ---------- room ---------- */
 const RX = 9, RZ = 7, RH = 4.5;
 const room = new THREE.Group(); scene.add(room);
-const mWall = new THREE.MeshStandardMaterial({ map: wallTex, roughness: .92, envMapIntensity: .08 });
+const mWall = new THREE.MeshStandardMaterial({ map: wallTex, roughness: .92, envMapIntensity: .08, bumpMap: wallTex, bumpScale: 1.5 });
 const mDark = new THREE.MeshStandardMaterial({ color: 0x16181b, roughness: .8, envMapIntensity: .1 });
 const mSteel = new THREE.MeshStandardMaterial({ color: 0x3a4046, roughness: .45, metalness: .8, envMapIntensity: .5 });
 function box(w, h, d, mat, x, y, z, parent = room, shadow = true) {
@@ -199,7 +200,7 @@ mirror.rotation.x = -Math.PI / 2; mirror.position.y = -0.01; scene.add(mirror);
 floorRough.repeat.set(2, 1.6); floorAlpha.repeat.set(2, 1.6);
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(RX * 2, RZ * 2), new THREE.MeshStandardMaterial({
   color: 0x30343a, map: floorRough, roughnessMap: floorRough, roughness: 1, metalness: 0,
-  alphaMap: floorAlpha, transparent: true, envMapIntensity: .25
+  alphaMap: floorAlpha, transparent: true, envMapIntensity: .25, bumpMap: floorRough, bumpScale: .5
 }));
 floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
 const mLine = new THREE.MeshStandardMaterial({ color: 0x8a6a16, roughness: .7, transparent: true, opacity: .55, polygonOffset: true, polygonOffsetFactor: -2 });
@@ -361,7 +362,11 @@ paint.onBeforeCompile = sh => {
     .replace('#include <color_fragment>', `#include <color_fragment>
       float sk = smoothstep(.315, .30, vObj.y);                                   // black sill, splitter, diffuser
       float gr = step(2.05, vObj.x) * step(abs(vObj.z), .52) * step(vObj.y, .46) * step(.33, vObj.y);  // intake
-      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.012), max(sk, gr));`);
+      float side = step(.55, abs(vObj.z)) * step(vObj.y, .87) * step(.3, vObj.y);
+      float ln = side * max(1. - smoothstep(.003, .007, abs(vObj.x - .62)), 1. - smoothstep(.003, .007, abs(vObj.x + .55)));
+      ln = max(ln, step(.78, vObj.x) * step(vObj.x, 2.0) * step(.6, vObj.y) * (1. - smoothstep(.003, .007, abs(abs(vObj.z) - (.6 - (vObj.x - .78) * .08)))));   // bonnet
+      ln = max(ln, step(abs(vObj.z), .62) * step(.6, vObj.y) * (1. - smoothstep(.003, .007, abs(vObj.x - .78))));
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.012), max(max(sk, gr), ln));`);
 };
 const body = new THREE.Mesh(loft(120, 72, (u, v, o) => bodyPoint(.5 - .5 * Math.cos(Math.PI * u), v * Math.PI * 2, o), true), paint);
 body.castShadow = body.receiveShadow = true; car.add(body);
@@ -388,6 +393,7 @@ const tyreProfile = [[.2, -.125], [.3, -.125], [.33, -.1], [.34, -.04], [.34, .0
 const tyreGeo = new THREE.LatheGeometry(tyreProfile, 48);
 const mRim = new THREE.MeshStandardMaterial({ color: 0xaab0b8, metalness: 1, roughness: .28, envMapIntensity: 1.2 });
 const mBarrel = new THREE.MeshStandardMaterial({ color: 0x0c0d0e, metalness: .6, roughness: .5 });
+const mCal = new THREE.MeshStandardMaterial({ color: 0x9a1208, roughness: .4, metalness: .3 });
 const mWell = new THREE.MeshBasicMaterial({ color: 0x010101, side: THREE.DoubleSide });
 const wheels = [];
 [[AX_F, 1], [AX_F, -1], [AX_R, 1], [AX_R, -1]].forEach(([x, s]) => {
@@ -399,6 +405,8 @@ const wheels = [];
     const a = i * Math.PI * 2 / 5;
     for (const o of [-.14, .14]) { const spk = new THREE.Mesh(new THREE.BoxGeometry(.2, .025, .028), mRim); spk.position.set(Math.cos(a) * .115, .1, Math.sin(a) * .115); spk.rotation.y = -a + o; w.add(spk); }
   }
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(.165, .165, .02, 32), mRim); disc.position.y = .03; w.add(disc);
+  const cal = new THREE.Mesh(new THREE.BoxGeometry(.07, .05, .13), mCal); cal.position.set(-.13, .045, 0); w.add(cal);
   const hub = new THREE.Mesh(new THREE.CylinderGeometry(.05, .06, .05, 20), mRim); hub.position.y = .105; w.add(hub);
   const well = new THREE.Mesh(loft(1, 24, (u, v, o) => { const a = -.25 + v * (Math.PI + .5); o.set(x + Math.cos(a) * .445, WR + Math.sin(a) * .445, (.45 + u * .38) * s); }, false), mWell); car.add(well);
   const cap = new THREE.Mesh(new THREE.PlaneGeometry(.89, .6), mWell); cap.position.set(x, .5, .45 * s); car.add(cap);
@@ -435,12 +443,28 @@ const panelTex = canvasTex(512, 512, (g, w, h) => {
   }
 }, true);
 const checkTex = canvasTex(256, 256, (g, w) => { for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { g.fillStyle = (i + j) % 2 ? '#0a0607' : '#5a1218'; g.fillRect(i * 64, j * 64, 64, 64); } }, true);
-const paintMat = c => new THREE.MeshStandardMaterial({ color: c, roughness: .9, envMapIntensity: .05 });
-const panelMat = new THREE.MeshStandardMaterial({ map: panelTex, roughness: .55, envMapIntensity: .12 });
-const velvet = (c, sheen) => new THREE.MeshPhysicalMaterial({ color: c, roughness: .95, sheen: .55, sheenRoughness: .5, sheenColor: new THREE.Color(sheen), envMapIntensity: .1 });
+const noiseTex = canvasTex(256, 256, (g, w, h) => { const d = g.createImageData(w, h), r = rng(3); for (let i = 0; i < d.data.length; i += 4) { const v = 90 + r() * 165; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; } g.putImageData(d, 0, 0); });
+noiseTex.repeat.set(6, 6);
+const plasterTex = canvasTex(256, 256, (g, w, h) => { const r = rng(4); g.fillStyle = '#808080'; g.fillRect(0, 0, w, h); for (let i = 0; i < 900; i++) blob(g, r() * w, r() * h, 3 + r() * 14, r() > .5 ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,.12)'); });
+plasterTex.repeat.set(3, 3);
+const paintMat = c => new THREE.MeshStandardMaterial({ color: c, roughness: .86, envMapIntensity: .7, bumpMap: plasterTex, bumpScale: .8 });
+const panelMat = new THREE.MeshStandardMaterial({ map: panelTex, roughness: .5, envMapIntensity: .7, bumpMap: panelTex, bumpScale: .6 });
+// velvet without the sheen lobe: it produced invalid pixels that the reflection bake spread everywhere.
+// A soft view-angle rim stands in for the pile catching light.
+const velvet = (c, sheen) => {
+  const m = new THREE.MeshStandardMaterial({ color: c, roughness: .93, envMapIntensity: .7, bumpMap: noiseTex, bumpScale: 1.2 });
+  const rim = new THREE.Color(sheen).lerp(new THREE.Color(c), .5);
+  m.onBeforeCompile = sh => {
+    sh.uniforms.uRim = { value: rim };
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uRim;')
+      .replace('#include <opaque_fragment>', 'float rimF = pow(clamp(1. - abs(dot(normalize(normal), normalize(vViewPosition))), 0., 1.), 3.);\n outgoingLight += reflectedLight.directDiffuse * uRim * rimF * 2.5;\n#include <opaque_fragment>');
+  };
+  return m;
+};
 const glow = (r, g, b) => new THREE.MeshBasicMaterial({ color: new THREE.Color(r, g, b), fog: false });
 const mBrass = new THREE.MeshStandardMaterial({ color: 0xb08a3c, metalness: 1, roughness: .28, envMapIntensity: .9 });
-const mBlack = new THREE.MeshStandardMaterial({ color: 0x0a0a0b, roughness: .5, metalness: .4, envMapIntensity: .3 });
+const mBlack = new THREE.MeshStandardMaterial({ color: 0x0a0a0b, roughness: .45, metalness: .4, envMapIntensity: .8 });
+const mSkirt = new THREE.MeshStandardMaterial({ color: 0x120b07, roughness: .4, envMapIntensity: .6 });
 
 // a wall from A to B, facing (-dz, dx); doors are [start, end, height] along its length
 function wall(ax, az, bx, bz, h, mat, doors = [], us = 4, parent = house, shadow = false) {
@@ -451,7 +475,11 @@ function wall(ax, az, bx, bz, h, mat, doors = [], us = 4, parent = house, shadow
     const geo = new THREE.PlaneGeometry(s1 - s0, y1 - y0), uv = geo.attributes.uv;
     for (let i = 0; i < uv.count; i++) uv.setXY(i, (s0 + uv.getX(i) * (s1 - s0)) / us, (y0 + uv.getY(i) * (y1 - y0)) / h);
     const m = new THREE.Mesh(geo, mat); m.position.set((s0 + s1) / 2, (y0 + y1) / 2, 0); m.receiveShadow = true; m.castShadow = shadow; g.add(m);
+    if (y0 === 0 && parent === house) { const k = new THREE.Mesh(new THREE.BoxGeometry(s1 - s0, .11, .024), mSkirt); k.position.set((s0 + s1) / 2, .055, .012); g.add(k); }
   };
+  if (parent === house) doors.forEach(([d0, d1, dh]) => {
+    [[d0 - .035, dh / 2, .07, dh], [d1 + .035, dh / 2, .07, dh], [(d0 + d1) / 2, dh + .035, d1 - d0 + .14, .07]].forEach(([x, y, w, hh]) => { const k = new THREE.Mesh(new THREE.BoxGeometry(w, hh, .05), mSkirt); k.position.set(x, y, .012); g.add(k); });
+  });
   let s = 0;
   doors.forEach(([d0, d1, dh]) => { piece(s, d0, 0, h); piece(d0, d1, dh, h); s = d1; });
   piece(s, len, 0, h);
@@ -467,8 +495,9 @@ function ball(r, mat, x, y, z, sx = 1, sy = 1, sz = 1, parent = house) {
   const m = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), mat); m.position.set(x, y, z); m.scale.set(sx, sy, sz); parent.add(m); return m;
 }
 const hbox = (w, h, d, mat, x, y, z) => box(w, h, d, mat, x, y, z, house, false);
+function rbox(w, h, d, mat, x, y, z, r = .05) { const m = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 4, Math.min(r, w / 2.01, h / 2.01, d / 2.01)), mat); m.position.set(x, y, z); house.add(m); return m; }
 const blobTex = canvasTex(128, 128, (g) => { blob(g, 64, 64, 64, 'rgba(0,0,0,.85)'); });
-const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 });
+const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, opacity: .55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 });
 function contact(x, z, rx, rz = rx) { const m = new THREE.Mesh(new THREE.PlaneGeometry(rx * 2, rz * 2), blobMat); m.rotation.x = -Math.PI / 2; m.position.set(x, .012, z); house.add(m); }
 const lavas = [];
 function lava(x, y, z, hue) {
@@ -476,7 +505,7 @@ function lava(x, y, z, hue) {
   const m = new THREE.Mesh(new THREE.CapsuleGeometry(.065, .26, 6, 16), new THREE.MeshBasicMaterial({ fog: false })); m.position.set(x, y + .32, z); house.add(m);
   lavas.push({ m, hue });
 }
-const shell = new THREE.MeshStandardMaterial({ color: 0x0c0a0c, roughness: 1, envMapIntensity: 0 });
+const shell = new THREE.MeshStandardMaterial({ color: 0x2a2624, roughness: .95, envMapIntensity: .6, bumpMap: plasterTex, bumpScale: .5 });
 
 // garage side of the shared wall, with the door into the lounge
 { const t = wallTex.clone(); t.needsUpdate = true; const m = mWall.clone(); m.map = t; wall(-RX, RZ, -RX, -RZ, RH, m, [[11.4, 12.6, 2.15]], 8, room, true); }
@@ -491,7 +520,7 @@ const curtain = new THREE.PlaneGeometry(9.6, HH, 240, 1);
 { const p = curtain.attributes.position; for (let i = 0; i < p.count; i++) p.setZ(i, Math.sin(p.getX(i) * 11) * .07 + Math.sin(p.getX(i) * 4.3) * .03); curtain.computeVertexNormals(); }
 { const c = new THREE.Mesh(curtain, velvet(0x4a0612, 0xff5a6a)); c.position.set(-14, HH / 2, -6.85); house.add(c); }
 const rug = new THREE.Mesh(new THREE.CircleGeometry(3.3, 64), velvet(0x3a1204, 0xc06020)); rug.rotation.x = -Math.PI / 2; rug.position.set(LX, .008, LZ); house.add(rug);
-const sofaProfile = [[1.55, .02], [1.55, .4], [1.62, .46], [2.12, .46], [2.16, .9], [2.24, .98], [2.4, .98], [2.46, .9], [2.46, .02]].map(p => new THREE.Vector2(p[0], p[1]));
+const sofaProfile = [[1.56, .06], [1.55, .34], [1.57, .41], [1.63, .455], [1.72, .47], [2.02, .46], [2.1, .47], [2.14, .52], [2.17, .86], [2.2, .94], [2.27, .985], [2.36, .985], [2.43, .94], [2.46, .84], [2.46, .06]].map(p => new THREE.Vector2(p[0], p[1]));
 const sofa = new THREE.Mesh(new THREE.LatheGeometry(sofaProfile, 72, Math.PI * .3, Math.PI * 1.4), velvet(0x3c0626, 0xd04890)); sofa.material.side = THREE.DoubleSide; sofa.position.set(LX, 0, LZ); house.add(sofa);
 contact(LX, LZ, 3.1);
 for (let i = 0; i < 7; i++) { const a = Math.PI * .42 + i * Math.PI * 1.16 / 6; ball(.2, velvet(i % 2 ? 0x0c4a4a : 0x8a5a08, i % 2 ? 0x60ffe0 : 0xffd060), LX + Math.sin(a) * 2.0, .62, LZ + Math.cos(a) * 2.0, 1, .8, .6).rotation.y = a; }
@@ -502,20 +531,20 @@ const arc = new THREE.Mesh(new THREE.TorusGeometry(1.7, .02, 8, 48, Math.PI * .6
 cyl(.28, .28, .05, mBlack, -10.4 + Math.cos(-Math.PI * .78) * 1.7, .03, -.4 + Math.sin(Math.PI * .78) * 1.7);
 const globePos = new THREE.Vector3(-10.4 + Math.cos(Math.PI * .62) * 1.7 * Math.cos(-Math.PI * .78), .1 + Math.sin(Math.PI * .62) * 1.7, -.4 - Math.cos(Math.PI * .62) * 1.7 * Math.sin(-Math.PI * .78));
 ball(.2, glow(2.4, 1.5, .7), globePos.x, globePos.y - .1, globePos.z);
-hbox(1.4, .5, .45, panelMat, -17.6, .25, .55); lava(-18.0, .5, .55, .05); lava(-17.2, .5, .55, .55);
+rbox(1.4, .5, .45, panelMat, -17.6, .25, .55, .02); lava(-18.0, .5, .55, .05); lava(-17.2, .5, .55, .55);
 
 // --- bar: glowing back wall, brass top, velvet stools
 slab(-19, 1, -9, 7, 0, new THREE.MeshStandardMaterial({ map: checkTex, roughness: .16, metalness: .2, envMapIntensity: .5 }), true).material.map.repeat.set(5, 3);
 slab(-19, 1, -9, 7, HH, shell, false);
 const barWall = paintMat(0x10262a);
 wall(-19, 1, -9, 1, HH, barWall, [[3.5, 6.5, 2.4]]); wall(-9, 1, -9, 7, HH, barWall); wall(-9, 7, -19, 7, HH, barWall); wall(-19, 7, -19, 1, HH, barWall, [[2.9, 4, 2.15]]);
-hbox(5.6, 1.5, .04, glow(.34, .12, .02), -14, 1.75, 6.93);
+hbox(5.6, 1.5, .04, glow(.2, .07, .012), -14, 1.75, 6.93);
 for (let s = 0; s < 3; s++) hbox(5.6, .04, .22, mBlack, -14, 1.2 + s * .5, 6.8);
-{ const bg = new THREE.CylinderGeometry(.045, .05, .3, 10), bm = new THREE.MeshStandardMaterial({ color: 0x0a0806, roughness: .2, metalness: .3 });
+{ const bg = new THREE.LatheGeometry([[0, -.15], [.045, -.15], [.047, .02], [.04, .06], [.016, .1], [.014, .16], [.018, .165], [0, .165]].map(p => new THREE.Vector2(p[0], p[1])), 12), bm = new THREE.MeshPhysicalMaterial({ roughness: .08, metalness: 0, clearcoat: 1, envMapIntensity: 1.2 }), bc = new THREE.Color();
   const inst = new THREE.InstancedMesh(bg, bm, 60), M = new THREE.Matrix4(), r = rng(31);
-  for (let i = 0; i < 60; i++) { const sh = i % 3, sy = .8 + r() * .5; M.makeScale(.8 + r() * .5, sy, .8 + r() * .5); M.setPosition(-16.6 + Math.floor(i / 3) * .27 + r() * .06, 1.22 + sh * .5 + .15 * sy, 6.8); inst.setMatrixAt(i, M); }
+  for (let i = 0; i < 60; i++) { const sh = i % 3, sy = .8 + r() * .5; M.makeScale(.8 + r() * .5, sy, .8 + r() * .5); M.setPosition(-16.6 + Math.floor(i / 3) * .27 + r() * .06, 1.22 + sh * .5 + .15 * sy, 6.8); inst.setMatrixAt(i, M); inst.setColorAt(i, bc.setHSL([.08, .28, .1, .0, .55][i % 5], .8, .05 + r() * .1)); }
   house.add(inst); }
-hbox(5.4, 1.05, .6, velvet(0x083c3c, 0x50ffe0), -14, .525, 5.3); hbox(5.6, .06, .8, mBrass, -14, 1.08, 5.3); hbox(5.4, .03, .02, glow(2.2, .5, 1.6), -14, .08, 4.99);
+rbox(5.4, 1.05, .6, velvet(0x083c3c, 0x50ffe0), -14, .525, 5.3, .06); rbox(5.6, .06, .8, mBrass, -14, 1.08, 5.3, .02); hbox(5.4, .03, .02, glow(2.2, .5, 1.6), -14, .08, 4.99);
 contact(-14, 5.2, 3.2, .9);
 for (let i = 0; i < 4; i++) { const x = -16.1 + i * 1.4; cyl(.2, .22, .03, mBrass, x, .015, 4.4); cyl(.025, .025, .7, mBrass, x, .37, 4.4, house, 10); cyl(.2, .18, .1, velvet(0x6a0a20, 0xff6080), x, .76, 4.4); contact(x, 4.4, .32); }
 for (let i = 0; i < 3; i++) { const x = -15.8 + i * 1.8; cyl(.006, .006, .9, mBlack, x, HH - .45, 5.3, house, 6); ball(.13, glow(1.5, .2, .85), x, HH - .95, 5.3); }
@@ -526,7 +555,7 @@ slab(-26, -7, -19, 0, 0, velvet(0x08222c, 0x40b0d0), true); slab(-26, -7, -19, 0
 const bedWall = paintMat(0x24091e);
 wall(-19, -7, -19, 0, HH, bedWall, [[3, 4.1, 2.15]]); wall(-26, -7, -19, -7, HH, bedWall); wall(-26, 0, -26, -7, HH, bedWall); wall(-19, 0, -26, 0, HH, bedWall);
 const BX = -23.2, BZ = -3.6;
-cyl(1.5, 1.4, .3, mBlack, BX, .15, BZ, house, 48); cyl(1.45, 1.48, .26, velvet(0x5a0614, 0xff4a60), BX, .43, BZ, house, 48); contact(BX, BZ, 2.1);
+cyl(1.5, 1.4, .3, mBlack, BX, .15, BZ, house, 48); { const mt = new THREE.Mesh(new THREE.LatheGeometry([[0, .3], [1.3, .3], [1.42, .33], [1.48, .4], [1.48, .5], [1.43, .57], [1.3, .6], [0, .62]].map(p => new THREE.Vector2(p[0], p[1])), 64), velvet(0x4a0612, 0xff4a60)); mt.position.set(BX, 0, BZ); house.add(mt); } contact(BX, BZ, 2.1);
 const head = new THREE.Mesh(new THREE.LatheGeometry([[1.5, 0], [1.5, 1.5], [1.56, 1.6], [1.68, 1.6], [1.74, 1.5], [1.74, 0]].map(p => new THREE.Vector2(p[0], p[1])), 40, Math.PI * 1.15, Math.PI * .7), velvet(0x2a0a4a, 0xa060ff));
 head.material.side = THREE.DoubleSide; head.position.set(BX, 0, BZ); house.add(head);
 [-.55, 0, .55].forEach((o, i) => ball(.3, velvet(i === 1 ? 0x8a5a08 : 0x10060a, i === 1 ? 0xffd060 : 0x8060a0), BX - 1.0, .68, BZ + o, .7, .42, 1));
@@ -534,7 +563,7 @@ const ceilMirror = new THREE.Mesh(new THREE.CircleGeometry(1.5, 48), new THREE.M
 const ring = new THREE.Mesh(new THREE.TorusGeometry(.75, .02, 8, 64), glow(2.6, .25, 1.2)); ring.rotation.y = Math.PI / 2; ring.position.set(-25.9, 1.9, BZ); house.add(ring);
 const ring2 = new THREE.Mesh(new THREE.TorusGeometry(.5, .016, 8, 64), glow(.3, 1.6, 2.4)); ring2.rotation.y = Math.PI / 2; ring2.position.set(-25.9, 1.9, BZ); house.add(ring2);
 [-2.0, 2.0].forEach((o, i) => { cyl(.28, .28, .5, panelMat, BX - .9, .25, BZ + o); lava(BX - .9, .5, BZ + o, i ? .9 : .6); contact(BX - .9, BZ + o, .4); });
-hbox(.5, 1.9, 1.3, panelMat, -19.5, .95, -6.2); hbox(.02, 1.5, .9, new THREE.MeshStandardMaterial({ color: 0x8890a0, metalness: 1, roughness: .08 }), -19.76, 1.1, -6.2);
+rbox(.5, 1.9, 1.3, panelMat, -19.5, .95, -6.2, .015); hbox(.02, 1.5, .9, new THREE.MeshStandardMaterial({ color: 0x8890a0, metalness: 1, roughness: .08 }), -19.76, 1.1, -6.2);
 
 // --- record den: wall of sleeves, console, blacklight posters
 slab(-26, 0, -19, 7, 0, new THREE.MeshStandardMaterial({ map: panelTex, color: 0x9a8a7a, roughness: .35, envMapIntensity: .3 }), true);
@@ -542,14 +571,14 @@ slab(-26, 0, -19, 7, HH, shell, false);
 wall(-19, 0, -19, 7, HH, panelMat, [[3, 4.1, 2.15]]); wall(-26, 0, -19, 0, HH, paintMat(0x0a0812)); wall(-26, 7, -26, 0, HH, panelMat); wall(-19, 7, -26, 7, HH, panelMat);
 hbox(.4, 2.2, 4.4, mBlack, -25.78, 1.1, 3.5);
 { const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(.3, .31, .022), new THREE.MeshStandardMaterial({ roughness: .7 }), 5 * 150), M = new THREE.Matrix4(), c = new THREE.Color(), r = rng(77);
-  for (let s = 0; s < 5; s++) for (let i = 0; i < 150; i++) { M.makeRotationX((r() - .5) * .08); M.setPosition(-25.62, .25 + s * .42, 1.45 + i * .0275); inst.setMatrixAt(s * 150 + i, M); inst.setColorAt(s * 150 + i, c.setHSL(r(), .4 + r() * .4, .04 + r() * .14)); }
+  for (let s = 0; s < 5; s++) for (let i = 0; i < 150; i++) { M.makeRotationX((r() - .5) * .08); M.setPosition(-25.62, .25 + s * .42, 1.45 + i * .0275); inst.setMatrixAt(s * 150 + i, M); inst.setColorAt(s * 150 + i, c.setHSL(r(), .25 + r() * .35, .03 + r() * .1)); }
   house.add(inst); for (let s = 0; s < 6; s++) hbox(.36, .03, 4.3, panelMat, -25.7, .08 + s * .42, 3.5); }
-hbox(2.4, .6, .55, panelMat, -22.4, .5, 6.6); [-23.4, -21.4].forEach(x => hbox(.04, .22, .04, mBrass, x, .11, 6.6));
+rbox(2.4, .6, .55, panelMat, -22.4, .5, 6.6, .03); [-23.4, -21.4].forEach(x => hbox(.04, .22, .04, mBrass, x, .11, 6.6));
 const platter = cyl(.17, .17, .02, mBlack, -22.9, .82, 6.6); cyl(.06, .06, .022, glow(1.8, .5, .1), -22.9, .822, 6.6);
 hbox(.3, .1, .3, mBlack, -21.9, .85, 6.6); hbox(.02, .01, .01, glow(.2, 2, .5), -21.9, .905, 6.44);
-[-24.3, -20.6].forEach(x => { hbox(.55, 1.2, .45, mBlack, x, .6, 6.65); [[.85, .15], [.42, .2]].forEach(([y, r]) => { const c = new THREE.Mesh(new THREE.CircleGeometry(r, 24), new THREE.MeshStandardMaterial({ color: 0x18181a, roughness: .4, metalness: .5 })); c.position.set(x, y, 6.42); c.rotation.y = Math.PI; house.add(c); }); contact(x, 6.6, .5); });
+[-24.3, -20.6].forEach(x => { rbox(.55, 1.2, .45, mBlack, x, .6, 6.65, .02); [[.85, .15], [.42, .2]].forEach(([y, r]) => { const c = new THREE.Mesh(new THREE.CircleGeometry(r, 24), new THREE.MeshStandardMaterial({ color: 0x18181a, roughness: .4, metalness: .5 })); c.position.set(x, y, 6.42); c.rotation.y = Math.PI; house.add(c); }); contact(x, 6.6, .5); });
 const chairV = velvet(0x4a3004, 0xc09030);
-hbox(.9, .3, .9, chairV, -22.2, .4, 3.3); { const b = hbox(.9, .9, .22, chairV, -22.2, .85, 2.9); b.rotation.x = -.25; } hbox(.6, .28, .6, chairV, -22.2, .3, 4.5);
+rbox(.9, .3, .9, chairV, -22.2, .4, 3.3, .12); { const b = rbox(.9, .95, .24, chairV, -22.2, .88, 2.88, .11); b.rotation.x = -.25; } [-.5, .5].forEach(o => rbox(.14, .2, .8, chairV, -22.2 + o, .62, 3.3, .06)); rbox(.6, .28, .6, chairV, -22.2, .3, 4.5, .12);
 [[-22.2, 3.3, .3], [-22.2, 4.5, .2]].forEach(([x, z, r]) => { cyl(r, r + .05, .04, mBrass, x, .02, z); cyl(.03, .03, .22, mBrass, x, .14, z, house, 8); contact(x, z, r + .35); });
 cyl(.3, .3, .03, mBrass, -21.2, .5, 3.6); cyl(.02, .2, .5, mBlack, -21.2, .25, 3.6, house, 12); lava(-21.2, .52, 3.6, .78);
 function posterTex(seed) {
@@ -566,16 +595,21 @@ function posterTex(seed) {
 hbox(4.6, .05, .05, glow(1.1, .25, 3), -22.6, 2.7, .12);
 
 // one small rig of lights follows the camera from room to room, so the light count stays fixed
+Object.values({ a: [-12.2, -1.0], b: [-14, 3.5], c: [-21.3, -1.9], d: [-21, 4.8] }).forEach(([x, z]) => { cyl(.11, .11, .03, mBrass, x, HH - .015, z); cyl(.08, .08, .032, glow(2.2, 1.6, 1.0), x, HH - .016, z); });
 const rig = [0, 1, 2, 3].map(() => { const l = new THREE.PointLight(0xffffff, 0, 9, 1.7); l.visible = false; scene.add(l); return l; });
+house.traverse(m => { if (m.isMesh) { m.receiveShadow = true; const t = m.geometry.type; m.castShadow = !m.material.isMeshBasicMaterial && t !== 'PlaneGeometry' && t !== 'CircleGeometry'; } });
+const key = new THREE.SpotLight(0xffd2a0, 0, 12, 1.0, .7, 1.5); key.visible = false; key.castShadow = true;
+key.shadow.mapSize.set(1024, 1024); key.shadow.bias = -0.0006; key.shadow.normalBias = .03; key.shadow.camera.near = .3; key.shadow.camera.far = 12;
+scene.add(key, key.target);
 const ROOMS = {
   garage: { label: 'Garage', target: [0, .6, 0], cam: [5, 1.1, 4.4], min: 3, max: 6.6 },
-  lounge: { label: 'Lounge', target: [LX, .7, LZ], cam: [-10.6, 1.6, .2], min: 2.2, max: 5.2,
+  lounge: { label: 'Lounge', key: [-12.2, 2.92, -1.0, LX, .3, LZ, 70], target: [LX, .7, LZ], cam: [-10.6, 1.6, .2], min: 2.2, max: 5.2,
     lights: [[LX, .9, LZ, 1, .42, .1, 26], [globePos.x, globePos.y - .3, globePos.z, 1, .7, .4, 16], [-17.5, 2.4, -6, 1, .1, .6, 16], [-11, 2.5, -5.5, .1, .7, .8, 9]] },
-  bar: { label: 'Bar', target: [-14, 1, 5.2], cam: [-11.4, 1.5, 2], min: 2, max: 4.6,
+  bar: { label: 'Bar', key: [-14, 2.92, 3.5, -14, .8, 5.3, 34], target: [-14, 1, 5.2], cam: [-11.4, 1.5, 2], min: 2, max: 4.6,
     lights: [[-14, 1.8, 6.2, 1, .55, .15, 22], [-14, 2.2, 4.6, 1, .15, .7, 12], [-11, 2.4, 2.4, .2, .8, .7, 8], [-17.5, 2.4, 2.4, 1, .5, .2, 7]] },
-  bedroom: { label: 'Bedroom', target: [BX, .6, BZ], cam: [-19.8, 1.7, -.8], min: 2.2, max: 4.6,
+  bedroom: { label: 'Bedroom', key: [-21.3, 2.92, -1.9, BX, .4, BZ, 50], target: [BX, .6, BZ], cam: [-19.8, 1.7, -.8], min: 2.2, max: 4.6,
     lights: [[-25.2, 1.9, BZ, 1, .1, .5, 18], [BX - .9, 1.0, BZ - 2, .6, .2, 1, 6], [BX - .9, 1.0, BZ + 2, 1, .3, .2, 6], [-20.5, 2.5, -5.5, .15, .4, 1, 9]] },
-  den: { label: 'Record den', target: [-22.6, .9, 3.6], cam: [-19.8, 1.5, 6.3], min: 2, max: 4.4,
+  den: { label: 'Record den', key: [-21, 2.92, 4.8, -23.2, .8, 3.0, 32], target: [-22.6, .9, 3.6], cam: [-19.8, 1.5, 6.3], min: 2, max: 4.4,
     lights: [[-22.6, 2.4, .9, .45, .12, 1, 22], [-21.2, 1.1, 3.6, 1, .6, .25, 9], [-22.4, 1.6, 6.0, 1, .5, .15, 8], [-25, 2.2, 3.5, .2, .5, 1, 6]] }
 };
 
@@ -589,7 +623,7 @@ function setNeon(t) {
 setNeon(0);
 car.visible = false; mirror.visible = false; dust.visible = false;
 const pmrem = new THREE.PMREMGenerator(renderer);
-scene.environment = pmrem.fromScene(scene, .03, .1, 40).texture;
+const envs = {}; envs.garage = pmrem.fromScene(scene, .03, .1, 40).texture; scene.environment = envs.garage;
 scene.environmentIntensity = .9;
 car.visible = true; mirror.visible = true; dust.visible = true;
 
@@ -606,20 +640,20 @@ composer.addPass(new ShaderPass({
       if(!(c.r==c.r)||!(c.g==c.g)||!(c.b==c.b)||c.r<0.||c.g<0.||c.b<0.) c=vec3(0.);
       gl_FragColor=vec4(min(c,vec3(40.)),1.); }`
 }));
-const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), .42, .6, 1.15); composer.addPass(bloom);
+const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), .3, .55, 1.2); composer.addPass(bloom);
 composer.addPass(new OutputPass());
 const grade = new ShaderPass({
   uniforms: { tDiffuse: { value: null }, uTime: { value: 0 } },
   vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
   fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime; varying vec2 vUv;
     float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)))*43758.5453); }
-    void main(){ vec2 c=vUv-.5; float d=dot(c,c); vec2 o=c*d*.012;
+    void main(){ vec2 c=vUv-.5; float d=dot(c,c); vec2 o=c*d*.005;
       vec3 col=vec3(texture2D(tDiffuse,vUv+o).r, texture2D(tDiffuse,vUv).g, texture2D(tDiffuse,vUv-o).b);
       float l=dot(col,vec3(.299,.587,.114));
       col+=vec3(-.006,.006,.016)*(1.-l);                               // teal in the shadows
       col*=mix(vec3(1.), vec3(1.05,1.,.93), smoothstep(.3,.9,l));       // warm highlights
       col*=smoothstep(.75,.1,d);
-      col+=(h(vUv*vec2(1920.,1080.)+fract(uTime)*91.)-.5)*.045;
+      col+=(h(vUv*vec2(1920.,1080.)+fract(uTime)*91.)-.5)*.03;
       gl_FragColor=vec4(col,1.); }`
 });
 composer.addPass(grade);
@@ -655,8 +689,19 @@ let roomName = 'garage';
 function setRoom(name) {
   if (name === roomName) return; roomName = name;
   const g = name === 'garage', R = ROOMS[name];
-  street.visible = lamp.visible = tailGlow.visible = g; hemi.intensity = g ? .9 : .3; headLights.forEach(h => h.visible = g && lampsOn);
-  rig.forEach((l, i) => { l.visible = !g; if (!g) { const [x, y, z, r, gg, b, k] = R.lights[i]; l.position.set(x, y, z); l.color.setRGB(r, gg, b); l.intensity = k * .34; } });
+  street.visible = lamp.visible = tailGlow.visible = g; hemi.intensity = g ? .9 : .06; headLights.forEach(h => h.visible = g && lampsOn);
+  rig.forEach((l, i) => { l.visible = !g; if (!g) { const [x, y, z, r, gg, b, k] = R.lights[i]; l.position.set(x, y, z); l.color.setRGB(r * .55 + .45, gg * .55 + .36, b * .55 + .25); l.intensity = k * .2; } });
+  key.visible = !g; if (!g) { const k = R.key; key.position.set(k[0], k[1], k[2]); key.target.position.set(k[3], k[4], k[5]); key.target.updateMatrixWorld(); key.intensity = k[6]; }
+  if (!envs[name]) envs[name] = bakeEnv([(R.target[0] + R.cam[0]) / 2, 0, (R.target[2] + R.cam[2]) / 2]);
+  scene.environment = envs[name]; scene.environmentIntensity = g ? .9 : .75;
+}
+// each room gets its own reflection/ambient probe, baked from the room's centre the first time it is entered
+function bakeEnv(c) {
+  const vis = [mirror.visible, dust.visible]; mirror.visible = dust.visible = false; scene.environment = null;
+  scene.position.set(-c[0], -1.5, -c[2]); scene.updateMatrixWorld(true);
+  const tex = pmrem.fromScene(scene, .03, .1, 30).texture;
+  scene.position.set(0, 0, 0); scene.updateMatrixWorld(true); [mirror.visible, dust.visible] = vis;
+  return tex;
 }
 function lookRoom(name) {
   const R = ROOMS[name]; setRoom(name);
