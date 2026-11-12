@@ -233,7 +233,7 @@ const shaftMat = new THREE.ShaderMaterial({
   uniforms: { uCol: { value: SODIUM.clone() }, uTime: { value: 0 }, uAmp: { value: .008 } },
   vertexShader: `varying vec2 vUv; varying vec3 vW, vAx, vN; void main(){ vUv=uv; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vAx=normalize(mat3(modelMatrix)*vec3(1.,0.,0.)); vN=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*w; }`,
   fragmentShader: `uniform vec3 uCol; uniform float uTime, uAmp; varying vec2 vUv; varying vec3 vW, vAx, vN;
-    void main(){ float e=1.-pow(abs(vUv.y*2.-1.),2.5); float l=pow(1.-vUv.x,1.4)*smoothstep(0.,.04,vUv.x);
+    void main(){ float e=clamp(1.-pow(min(abs(vUv.y*2.-1.),1.),2.5),0.,1.); float l=pow(clamp(1.-vUv.x,0.,1.),1.4)*smoothstep(0.,.04,vUv.x);
       float n=.75+.25*sin(vW.x*1.7+uTime*.35)*sin(vW.z*2.3-uTime*.22+vW.y*3.);
       float nf=smoothstep(.6,3.2,distance(cameraPosition,vW)); vec3 vd=normalize(vW-cameraPosition);
       nf*=(1.-smoothstep(.7,.96,abs(dot(vAx,vd))))*smoothstep(.04,.4,abs(dot(normalize(vN),vd)));   // hide sheets seen end-on or edge-on
@@ -440,6 +440,15 @@ car.visible = true; mirror.visible = true; dust.visible = true;
 const rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
 const composer = new EffectComposer(renderer, rt);
 composer.addPass(new RenderPass(scene, camera));
+// one invalid pixel would otherwise be smeared across the whole frame by the bloom blur
+composer.addPass(new ShaderPass({
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+    void main(){ vec3 c=texture2D(tDiffuse,vUv).rgb;
+      if(!(c.r==c.r)||!(c.g==c.g)||!(c.b==c.b)||c.r<0.||c.g<0.||c.b<0.) c=vec3(0.);
+      gl_FragColor=vec4(min(c,vec3(40.)),1.); }`
+}));
 const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), .42, .6, 1.15); composer.addPass(bloom);
 composer.addPass(new OutputPass());
 const grade = new ShaderPass({
