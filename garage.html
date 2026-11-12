@@ -48,7 +48,7 @@ button:hover { border-color: var(--sodium); color: var(--sodium); }
 button:focus-visible { outline: 2px solid var(--sodium); outline-offset: 2px; }
 button[aria-pressed="true"] { border-color: var(--sodium); color: var(--sodium); }
 [hidden] { display: none !important; }
-#err { position: fixed; inset: 0; z-index: 4; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--dim); }
+#err { position: fixed; inset: 0; z-index: 4; background: rgba(5,7,10,.8); display: grid; place-items: center; padding: 24px; text-align: center; color: var(--dim); }
 @media (max-width: 560px) { :root { --bar: 64px; } }
 @media (prefers-reduced-motion: reduce) { .rec { animation: none; } }
 </style>
@@ -69,6 +69,12 @@ button[aria-pressed="true"] { border-color: var(--sodium); color: var(--sodium);
   </div>
 </div>
 <div id="err" hidden>This scene needs WebGL, which this browser or device did not provide.</div>
+<script>
+  // surface any failure on screen instead of leaving a black frame
+  function showErr(msg) { var e = document.getElementById('err'); e.textContent = msg; e.hidden = false; }
+  addEventListener('error', function (ev) { if (!ev.message && !(ev.target && ev.target.tagName === 'SCRIPT')) return; showErr('The scene hit an error: ' + (ev.message || 'a script failed to load') + '. Reload the page to try again.'); }, true);
+  addEventListener('unhandledrejection', function (ev) { showErr('The scene hit an error: ' + (ev.reason && ev.reason.message || ev.reason) + '. Reload the page to try again.'); });
+</script>
 
 <script type="importmap">
 { "imports": {
@@ -102,8 +108,10 @@ renderer.setPixelRatio(DPR);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = .95;
+renderer.toneMappingExposure = 1.3;
 stage.appendChild(renderer.domElement);
+renderer.domElement.addEventListener('webglcontextlost', e => { e.preventDefault(); showErr('The graphics context was lost (the device ran low on GPU memory). Reload the page to restart the scene.'); });
+renderer.domElement.addEventListener('webglcontextrestored', () => { document.getElementById('err').hidden = true; });
 RectAreaLightUniformsLib.init();
 
 const scene = new THREE.Scene();
@@ -250,7 +258,7 @@ function tube(x, z, len, alongX, power) {
   l.position.set(x, RH - .56, z); l.rotation.x = -Math.PI / 2; scene.add(l);
   const t = { mat, l, power, k: 1 }; tubes.push(t); return t;
 }
-tube(0, 1.7, 5.5, true, 14); tube(0, -1.7, 5.5, true, 14);
+tube(0, 1.7, 5.5, true, 20); tube(0, -1.7, 5.5, true, 20);
 const flick = tube(-5, -5.2, 2.4, true, 7);
 
 // neon mandala on the back wall, hue drifts slowly
@@ -300,7 +308,7 @@ box(.012, RH - 2.15, .012, mDark, -5, (RH + 2.15) / 2, -6.3, room, false);
 const bulb = new THREE.Mesh(new THREE.SphereGeometry(.05, 12, 12), new THREE.MeshBasicMaterial({ color: lampCol.clone().multiplyScalar(4), fog: false }));
 bulb.position.set(-5, 2.0, -6.3); room.add(bulb);
 const lamp = new THREE.SpotLight(lampCol, 40, 7, .95, .8, 1.6); lamp.position.set(-5, 2.02, -6.3); lamp.target.position.set(-5, 0, -6.2); scene.add(lamp, lamp.target);
-scene.add(new THREE.HemisphereLight(0x22344a, 0x0a0806, .35));
+scene.add(new THREE.HemisphereLight(0x2c4460, 0x120d08, .9));
 
 /* ---------- car: lofted body, shader-cut wheel arches ---------- */
 const car = new THREE.Group(); scene.add(car);
@@ -443,7 +451,7 @@ const grade = new ShaderPass({
       float l=dot(col,vec3(.299,.587,.114));
       col+=vec3(-.006,.006,.016)*(1.-l);                               // teal in the shadows
       col*=mix(vec3(1.), vec3(1.05,1.,.93), smoothstep(.3,.9,l));       // warm highlights
-      col*=smoothstep(.62,.08,d);
+      col*=smoothstep(.75,.1,d);
       col+=(h(vUv*vec2(1920.,1080.)+fract(uTime)*91.)-.5)*.045;
       gl_FragColor=vec4(col,1.); }`
 });
