@@ -231,11 +231,12 @@ scene.add(street, street.target);
 const shaftMat = new THREE.ShaderMaterial({
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
   uniforms: { uCol: { value: SODIUM.clone() }, uTime: { value: 0 }, uAmp: { value: .008 } },
-  vertexShader: `varying vec2 vUv; varying vec3 vW; void main(){ vUv=uv; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; gl_Position=projectionMatrix*viewMatrix*w; }`,
-  fragmentShader: `uniform vec3 uCol; uniform float uTime, uAmp; varying vec2 vUv; varying vec3 vW;
+  vertexShader: `varying vec2 vUv; varying vec3 vW, vAx, vN; void main(){ vUv=uv; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vAx=normalize(mat3(modelMatrix)*vec3(1.,0.,0.)); vN=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*w; }`,
+  fragmentShader: `uniform vec3 uCol; uniform float uTime, uAmp; varying vec2 vUv; varying vec3 vW, vAx, vN;
     void main(){ float e=1.-pow(abs(vUv.y*2.-1.),2.5); float l=pow(1.-vUv.x,1.4)*smoothstep(0.,.04,vUv.x);
       float n=.75+.25*sin(vW.x*1.7+uTime*.35)*sin(vW.z*2.3-uTime*.22+vW.y*3.);
-      float nf=smoothstep(.6,3.2,distance(cameraPosition,vW));
+      float nf=smoothstep(.6,3.2,distance(cameraPosition,vW)); vec3 vd=normalize(vW-cameraPosition);
+      nf*=(1.-smoothstep(.7,.96,abs(dot(vAx,vd))))*smoothstep(.04,.4,abs(dot(normalize(vN),vd)));   // hide sheets seen end-on or edge-on
       gl_FragColor=vec4(uCol*e*l*n*uAmp*nf,1.); }`
 });
 winZ.forEach(z => {
