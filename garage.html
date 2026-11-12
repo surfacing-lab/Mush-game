@@ -102,7 +102,7 @@ renderer.setPixelRatio(DPR);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = .95;
 stage.appendChild(renderer.domElement);
 RectAreaLightUniformsLib.init();
 
@@ -213,7 +213,7 @@ const mPane = new THREE.MeshBasicMaterial({ color: SODIUM.clone().multiplyScalar
 winZ.forEach(z => { const p = new THREE.Mesh(new THREE.PlaneGeometry(1.2, .6), mPane); p.rotation.y = -Math.PI / 2; p.position.set(RX + .02, 2.6, z); room.add(p); });
 
 const LPOS = new THREE.Vector3(15, 4.4, 0);
-const street = new THREE.SpotLight(SODIUM, 800, 30, .62, .5, 1.6);
+const street = new THREE.SpotLight(SODIUM, 520, 30, .62, .5, 1.6);
 street.position.copy(LPOS); street.target.position.set(0, 0, 0);
 street.castShadow = true; street.shadow.mapSize.set(2048, 2048); street.shadow.bias = -0.0004; street.shadow.normalBias = .02;
 street.shadow.camera.near = 4; street.shadow.camera.far = 30;
@@ -227,7 +227,8 @@ const shaftMat = new THREE.ShaderMaterial({
   fragmentShader: `uniform vec3 uCol; uniform float uTime, uAmp; varying vec2 vUv; varying vec3 vW;
     void main(){ float e=1.-pow(abs(vUv.y*2.-1.),2.5); float l=pow(1.-vUv.x,1.4)*smoothstep(0.,.04,vUv.x);
       float n=.75+.25*sin(vW.x*1.7+uTime*.35)*sin(vW.z*2.3-uTime*.22+vW.y*3.);
-      gl_FragColor=vec4(uCol*e*l*n*uAmp,1.); }`
+      float nf=smoothstep(.6,3.2,distance(cameraPosition,vW));
+      gl_FragColor=vec4(uCol*e*l*n*uAmp*nf,1.); }`
 });
 winZ.forEach(z => {
   const w0 = new THREE.Vector3(RX, 2.6, z), d = w0.clone().sub(LPOS).normalize(), len = 2.6 / -d.y;
@@ -335,8 +336,8 @@ function loft(NS, NT, fn, closed) {
 const AX_F = 1.38, AX_R = -1.32, WR = .34;
 const PAINTS = [
   { name: 'Oil slick', color: 0x0a1418, irid: 1, metal: .85, rough: .22 },
-  { name: 'Sodium', color: 0x8a2a04, irid: 0, metal: .7, rough: .25 },
-  { name: 'Bone', color: 0xb9b4a6, irid: 0, metal: .1, rough: .3 },
+  { name: 'Sodium', color: 0x5e1c03, irid: 0, metal: .7, rough: .25 },
+  { name: 'Bone', color: 0x57534b, irid: 0, metal: .25, rough: .34 },
   { name: 'Acid violet', color: 0x2a0a52, irid: .6, metal: .8, rough: .2 }
 ];
 const paint = new THREE.MeshPhysicalMaterial({
@@ -398,7 +399,7 @@ const wheels = [];
 const coneMat = shaftMat.clone(); coneMat.uniforms = { uCol: { value: new THREE.Color(.6, .75, 1) }, uTime: shaftMat.uniforms.uTime, uAmp: { value: .007 } };
 const heads = [];
 [-1, 1].forEach(s => {
-  const l = new THREE.SpotLight(0xcfe0ff, 160, 16, .42, .7, 1.7); l.position.set(2.2, .62, .6 * s); l.target.position.set(9, .5, .9 * s); car.add(l, l.target); heads.push(l);
+  const l = new THREE.SpotLight(0xcfe0ff, 90, 16, .42, .7, 1.7); l.position.set(2.2, .62, .6 * s); l.target.position.set(9, .5, .9 * s); car.add(l, l.target); heads.push(l);
   const g = new THREE.Group(); g.position.set(2.24, .64, .6 * s); g.rotation.y = -s * .04; car.add(g);
   const gv = new THREE.PlaneGeometry(1, 1).translate(.5, 0, 0), gh = gv.clone().rotateX(Math.PI / 2);
   for (let i = 0; i < 3; i++) { const m = new THREE.Mesh(gv, coneMat); m.scale.set(4.5, .5, 1); m.position.z = -.15 + i * .15; g.add(m); heads.push(m); }
@@ -430,7 +431,7 @@ car.visible = true; mirror.visible = true; dust.visible = true;
 const rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
 const composer = new EffectComposer(renderer, rt);
 composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), .6, .75, .92); composer.addPass(bloom);
+const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), .42, .6, 1.15); composer.addPass(bloom);
 composer.addPass(new OutputPass());
 const grade = new ShaderPass({
   uniforms: { tDiffuse: { value: null }, uTime: { value: 0 } },
@@ -451,8 +452,9 @@ composer.addPass(grade);
 function resize() {
   const w = stage.clientWidth, h = stage.clientHeight;
   renderer.setSize(w, h, false); composer.setPixelRatio(DPR); composer.setSize(w, h);
-  camera.aspect = w / h; camera.updateProjectionMatrix();
+  camera.aspect = w / h; if (typeof setFov === 'function' && fovReady) setFov(baseFov); else camera.updateProjectionMatrix();
 }
+let fovReady = false;
 addEventListener('resize', resize); resize();
 
 /* ---------- camera: a looping shot list, or free look ---------- */
@@ -466,6 +468,13 @@ const SHOTS = [
   { name: 'Crane down', fov: 40, p0: V(4.6, 3.6, 3.4), p1: V(5.4, 1.9, 4.2), t0: V(0, .4, 0), t1: V(0, .6, 0) }
 ];
 const DUR = 9, FADE = .7;
+let baseFov = 32;
+function setFov(f) {
+  baseFov = f; const a = camera.aspect, R = Math.PI / 360;
+  camera.fov = a >= 1.6 ? f : Math.min(74, Math.atan(Math.tan(f * R) * 1.6 / a) / R);
+  camera.updateProjectionMatrix();
+}
+fovReady = true;
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, .6, 0); controls.enableDamping = true; controls.dampingFactor = .06;
 controls.minDistance = 3; controls.maxDistance = 6.6; controls.maxPolarAngle = Math.PI / 2 - .04; controls.enablePan = false;
@@ -477,11 +486,11 @@ const tgt = new THREE.Vector3();
 function slate(name, fov) { nameEl.textContent = name; lensEl.textContent = Math.round(12 / Math.tan(fov * Math.PI / 360)) + 'mm'; }
 function setFilm(on) {
   film = on; controls.enabled = !on; btnCam.textContent = on ? 'Free look' : 'Resume film'; btnCam.setAttribute('aria-pressed', String(!on));
-  if (!on) { camera.fov = 34; camera.updateProjectionMatrix(); fadeEl.style.opacity = 0; slate('Free look', 34); shotIdx = -1; controls.target.set(0, .6, 0); }
+  if (!on) { setFov(34); fadeEl.style.opacity = 0; slate('Free look', 34); shotIdx = -1; controls.target.set(0, .6, 0); }
 }
 function filmFrame(t) {
   const i = Math.floor(t / DUR) % SHOTS.length, u = (t % DUR) / DUR, s = SHOTS[i], e = u * u * (3 - 2 * u) * .6 + u * .4;
-  if (i !== shotIdx) { shotIdx = i; camera.fov = s.fov; camera.updateProjectionMatrix(); slate(s.name, s.fov); }
+  if (i !== shotIdx) { shotIdx = i; setFov(s.fov); slate(s.name, s.fov); }
   camera.position.lerpVectors(s.p0, s.p1, e); camera.lookAt(tgt.lerpVectors(s.t0, s.t1, e));
   const lt = u * DUR; fadeEl.style.opacity = Math.max(0, 1 - lt / FADE, 1 - (DUR - lt) / FADE);
 }
@@ -523,5 +532,5 @@ function frame() {
   composer.render();
 }
 renderer.setAnimationLoop(frame);
-window.__garage = { seek: t => { filmT = t; }, still: t => { renderer.setAnimationLoop(null); filmT = t; time = t; filmFrame(t); fadeEl.style.opacity = 0; setNeon(t); composer.render(); } };
+window.__garage = { view: (x, y, z) => { renderer.setAnimationLoop(null); setFilm(false); camera.position.set(x, y, z); controls.update(); controls.update(); composer.render(); }, seek: t => { filmT = t; }, still: t => { renderer.setAnimationLoop(null); filmT = t; time = t; filmFrame(t); fadeEl.style.opacity = 0; setNeon(t); composer.render(); } };
 </script>
