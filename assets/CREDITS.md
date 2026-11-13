@@ -16,3 +16,7 @@ All models are from BlenderKit, published there under CC0 (public domain). They 
 | `glass.glb` | Ballantine's whiskey glass | Zoltán Péter Fáth | https://www.blenderkit.com/asset-gallery-detail/6692b1d0-a405-4201-b6df-982b35c5888f/ |
 | `toolbox.glb` | Metal Toolbox | Poly Haven  | https://www.blenderkit.com/asset-gallery-detail/b3e011a5-b5b1-4efd-9dab-4f3a4b6a4569/ |
 | `chaise.glb` | Chaise lounge (Sofa) | abd3d  | https://www.blenderkit.com/asset-gallery-detail/06142923-e973-46a7-a29b-e0571a69ffe5/ |
+
+## Car
+
+The garage car is the **Toyota GR GT** by Seatla Morake, from BlenderKit (https://www.blenderkit.com/asset-gallery-detail/6f9b992c-8c82-451e-bd2d-a3321179f68e/). It is under BlenderKit's royalty-free licence, not CC0, so the model file is **not** stored in this repository. Download the glTF from that page and save it as `assets/grgt.glb`; without it the page falls back to the code-built coupe.

@@ -421,10 +421,10 @@ const wheels = [];
 
 // headlight throw + visible cones
 const coneMat = shaftMat.clone(); coneMat.uniforms = { uCol: { value: new THREE.Color(.6, .75, 1) }, uTime: shaftMat.uniforms.uTime, uAmp: { value: .007 } };
-const heads = [], headLights = [];
+const heads = [], headLights = [], beamGroups = [];
 [-1, 1].forEach(s => {
   const l = new THREE.SpotLight(0xcfe0ff, 90, 16, .42, .7, 1.7); l.position.set(2.2, .62, .6 * s); l.target.position.set(9, .5, .9 * s); car.add(l, l.target); headLights.push(l);
-  const g = new THREE.Group(); g.position.set(2.24, .64, .6 * s); g.rotation.y = -s * .04; car.add(g);
+  const g = new THREE.Group(); g.userData.keep = true; g.position.set(2.24, .64, .6 * s); g.rotation.y = -s * .04; car.add(g); beamGroups.push(g);
   const gv = new THREE.PlaneGeometry(1, 1).translate(.5, 0, 0), gh = gv.clone().rotateX(Math.PI / 2);
   for (let i = 0; i < 3; i++) { const m = new THREE.Mesh(gv, coneMat); m.scale.set(4.5, .5, 1); m.position.z = -.15 + i * .15; g.add(m); heads.push(m); }
   for (let i = 0; i < 2; i++) { const m = new THREE.Mesh(gh, coneMat); m.scale.set(4.5, 1, .6); m.position.y = -.08 + i * .16; g.add(m); heads.push(m); }
@@ -651,7 +651,9 @@ gltfLoader.register(parser => { parser.textureLoader = new THREE.TextureLoader(p
 // a model is served either as a plain .glb or, where only web file types are hosted, as the same bytes base64-wrapped in JSON
 async function loadModel(name) {
   let buf;
-  try { const r = await fetch('assets/' + name + '.json'); if (!r.ok) throw 0; const b = atob((await r.json()).glb); buf = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) buf[i] = b.charCodeAt(i); buf = buf.buffer; }
+  try { const r = await fetch('assets/' + name + '.json'); if (!r.ok) throw 0; const j = await r.json(); let t = j.glb || '';
+    for (let i = 1; i <= (j.parts || 0); i++) t += (await (await fetch('assets/' + name + '.' + i + '.json')).json()).glb;   // large models arrive in pieces
+    const b = atob(t); buf = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) buf[i] = b.charCodeAt(i); buf = buf.buffer; }
   catch (e) { const r = await fetch('assets/' + name + '.glb'); if (!r.ok) throw new Error('missing ' + name); buf = await r.arrayBuffer(); }
   return await gltfLoader.parseAsync(buf, '');
 }
@@ -677,6 +679,14 @@ place('lamp', [[-23.4, 0, 2.5, PI / 2]]);
 place('table', [[-22.2, 0, 5.0, 0]]);
 place('chaise', [[-21.9, 0, -.95, PI]]);
 place('man', [[-24.7, 0, 4.3, -PI / 2 - .3]]);
+// the car: a Toyota GR GT replaces the code-built coupe once it has loaded
+place('grgt', [[0, 0, 0, PI / 2]], car, () => {
+  car.children.forEach(c => { if (!c.isLight && !c.userData.keep && (c.isMesh || c.children.length)) c.visible = false; });
+  headLights.forEach((l, i) => { const sgn = i ? 1 : -1; l.position.set(2.2, .68, .74 * sgn); l.target.position.set(9, .5, 1.0 * sgn); });
+  beamGroups.forEach((g, i) => g.position.set(2.36, .68, .74 * (i ? 1 : -1)));
+  tailGlow.position.set(-2.75, .8, 0);
+  document.getElementById('btnPaint').hidden = true;
+});
 place('boombox', [[-5.1, .96, -6.5, 0]], room);
 place('toolbox', [[-3.75, .96, -6.45, .2]], room);
 
