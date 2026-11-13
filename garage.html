@@ -647,16 +647,24 @@ function clearRegion(x0, x1, z0, z1, y0, y1) {
   house.children.filter(m => m.isMesh && m.geometry.type !== 'PlaneGeometry' && m.geometry.type !== 'CircleGeometry' && m.position.x > x0 && m.position.x < x1 && m.position.z > z0 && m.position.z < z1 && m.position.y > y0 && m.position.y < y1).forEach(m => house.remove(m));
 }
 const gltfLoader = new GLTFLoader(); let modelsPending = 0;
+gltfLoader.register(parser => { parser.textureLoader = new THREE.TextureLoader(parser.options.manager); return { name: 'IMG_TEXTURES' }; });   // decode textures through <img>, which every host allows
+// a model is served either as a plain .glb or, where only web file types are hosted, as the same bytes base64-wrapped in JSON
+async function loadModel(name) {
+  let buf;
+  try { const r = await fetch('assets/' + name + '.json'); if (!r.ok) throw 0; const b = atob((await r.json()).glb); buf = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) buf[i] = b.charCodeAt(i); buf = buf.buffer; }
+  catch (e) { const r = await fetch('assets/' + name + '.glb'); if (!r.ok) throw new Error('missing ' + name); buf = await r.arrayBuffer(); }
+  return await gltfLoader.parseAsync(buf, '');
+}
 function place(name, spots, parent = house, onLoad) {
   modelsPending++;
   const done = () => { if (--modelsPending === 0) { for (const k in envs) if (k !== 'garage') delete envs[k]; if (roomName !== 'garage') { const n = roomName; roomName = ''; setRoom(n); } } };
-  gltfLoader.load('assets/' + name + '.glb', g => {
+  loadModel(name).then(g => {
     const src = g.scene, b = new THREE.Box3().setFromObject(src), c = b.getCenter(new THREE.Vector3());
     src.traverse(m => { if (m.isMesh) { m.castShadow = m.receiveShadow = true; if (m.material.transmission) { m.material.transmission = 0; m.material.transparent = true; m.material.opacity = .35; m.castShadow = false; } } });
     if (onLoad) onLoad();
     spots.forEach(([x, y, z, ry, sc = 1]) => { const h = new THREE.Group(), o = src.clone(); o.position.set(-c.x, -b.min.y, -c.z); h.add(o); h.position.set(x, y, z); h.rotation.y = ry; h.scale.setScalar(sc); parent.add(h); });
     done();
-  }, undefined, done);
+  }).catch(done);
 }
 const PI = Math.PI;
 place('fitzroy', [[-16.5, 0, LZ, PI / 2]], house, () => { house.remove(sofa); clearRegion(-16.3, -11.7, -5.3, -.7, .5, .75); });
