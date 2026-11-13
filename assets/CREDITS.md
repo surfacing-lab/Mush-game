@@ -20,3 +20,7 @@ All models are from BlenderKit, published there under CC0 (public domain). They 
 ## Car
 
 The garage car is the **Toyota GR GT** by Seatla Morake, from BlenderKit (https://www.blenderkit.com/asset-gallery-detail/6f9b992c-8c82-451e-bd2d-a3321179f68e/). It is under BlenderKit's royalty-free licence, not CC0, so the model file is **not** stored in this repository. Download the glTF from that page and save it as `assets/grgt.glb`; without it the page falls back to the code-built coupe.
+
+## Moving character
+
+`michelle.glb` (character and dance) and `xbotanim.glb` (walk and idle clips) are Mixamo characters and animations as distributed in the three.js examples (https://github.com/mrdoob/three.js/tree/r170/examples/models/gltf). The walk and idle clips are retargeted onto the character at load time.

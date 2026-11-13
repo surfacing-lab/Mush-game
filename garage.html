@@ -690,6 +690,52 @@ place('grgt', [[0, 0, 0, PI / 2]], car, () => {
 place('boombox', [[-5.1, .96, -6.5, 0]], room);
 place('toolbox', [[-3.75, .96, -6.45, .2]], room);
 
+// --- a moving person: a Mixamo-rigged character. Her dance clip is her own; the walk and idle clips
+// come from another Mixamo rig and are retargeted by bone name (rotations only, hips re-based).
+let mixer = null, actorStep = null;
+Promise.all([loadModel('michelle'), loadModel('xbotanim')]).then(([m, x]) => {
+  const who = m.scene; who.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; o.frustumCulled = false; } });
+  house.add(who); mixer = new THREE.AnimationMixer(who);
+  // Retarget in world space: both rigs rest in the same T-pose but with different bone axes, so each frame
+  // takes the source bone's world rotation relative to its rest and applies it on top of the target's rest.
+  who.updateMatrixWorld(true); x.scene.updateMatrixWorld(true);
+  const srcBy = {}; x.scene.traverse(o => { srcBy[o.name] = o; });
+  const Q = () => new THREE.Quaternion(), rig2 = [];
+  who.traverse(o => { if (o.isBone) { const sb = srcBy[o.name]; rig2.push({ b: o, s: sb, wt: o.getWorldQuaternion(Q()), wsInv: sb ? sb.getWorldQuaternion(Q()).invert() : null, local: o.quaternion.clone() }); } });
+  const retarget = clip => {
+    const sm = new THREE.AnimationMixer(x.scene), act0 = sm.clipAction(clip); act0.play();
+    const n = Math.ceil(clip.duration * 30) + 1, times = new Float32Array(n), vals = rig2.map(() => new Float32Array(n * 4)), world = new Map();
+    for (let f = 0; f < n; f++) {
+      const t = Math.min(f / 30, clip.duration); times[f] = t; sm.setTime(t); x.scene.updateMatrixWorld(true);
+      rig2.forEach((r, k) => {
+        const pw = world.get(r.b.parent) || r.b.parent.getWorldQuaternion(Q());
+        const w = r.s ? r.s.getWorldQuaternion(Q()).multiply(r.wsInv).multiply(r.wt) : pw.clone().multiply(r.local);
+        world.set(r.b, w); pw.clone().invert().multiply(w).toArray(vals[k], f * 4);
+      });
+      world.clear();
+    }
+    act0.stop(); sm.uncacheRoot(x.scene);
+    return new THREE.AnimationClip(clip.name, clip.duration, rig2.map((r, k) => new THREE.QuaternionKeyframeTrack(r.b.name + '.quaternion', times, vals[k])));
+  };
+  const clip = (src, n) => src.animations.find(a => a.name === n);
+  const act = { dance: mixer.clipAction(clip(m, 'SambaDance')), walk: mixer.clipAction(retarget(clip(x, 'walk'))), idle: mixer.clipAction(retarget(clip(x, 'idle'))) };
+  let cur = null; const play = n => { if (cur === act[n]) return; const a = act[n]; a.reset().play(); if (cur) cur.crossFadeTo(a, .45, false); cur = a; };
+  // dance by the fire, stroll through the archway to the bar, wait there, stroll back
+  const SPOT = { fire: new THREE.Vector3(-12.9, 0, -1.7), bar: new THREE.Vector3(-15.4, 0, 3.7) };
+  const plan = [['dance', 15, 1.1], ['walk', 'bar'], ['idle', 7, 0], ['walk', 'fire']]; let step = 0, tLeft = plan[0][1], face = plan[0][2];
+  who.position.copy(SPOT.fire); who.rotation.y = face; play('dance');
+  const turn = (to, dt) => { let d = to - who.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); who.rotation.y += d * Math.min(1, dt * 6); };
+  actorStep = dt => {
+    const s = plan[step];
+    if (s[0] === 'walk') {
+      const to = SPOT[s[1]], dx = to.x - who.position.x, dz = to.z - who.position.z, dist = Math.hypot(dx, dz);
+      turn(Math.atan2(dx, dz), dt);
+      if (dist < .06) { step = (step + 1) % plan.length; tLeft = plan[step][1]; face = plan[step][2]; play(plan[step][0]); }
+      else { const v = Math.min(dist, 1.25 * dt); who.position.x += dx / dist * v; who.position.z += dz / dist * v; }
+    } else { turn(face, dt); tLeft -= dt; if (tLeft <= 0) { step = (step + 1) % plan.length; play('walk'); } }
+  };
+}).catch(() => {});
+
 // one small rig of lights follows the camera from room to room, so the light count stays fixed
 Object.values({ a: [-12.2, -1.0], b: [-14, 3.5], d: [-21, 4.8] }).forEach(([x, z]) => { cyl(.11, .11, .03, mBrass, x, HH - .015, z); cyl(.08, .08, .032, glow(2.2, 1.6, 1.0), x, HH - .016, z); });
 const rig = [0, 1, 2, 3].map(() => { const l = new THREE.PointLight(0xffffff, 0, 9, 1.7); l.visible = false; scene.add(l); return l; });
@@ -776,7 +822,7 @@ SHOTS.splice(2, 0,
   { name: 'Lounge — fire pit', room: 'lounge', fov: 40, p0: V(-10.3, 1.3, .3), p1: V(-11.0, 1.25, -.5), t0: V(-14.3, 1.0, -3.4), t1: V(-14.3, 1.0, -3.4) },
   { name: 'Lounge — through the door', room: 'lounge', fov: 30, p0: V(-10.4, 1.25, -6.1), p1: V(-9.7, 1.15, -5.5), t0: V(0, .6, 0), t1: V(0, .6, 0) });
 SHOTS.push(
-  { name: 'Bar', room: 'bar', fov: 38, p0: V(-11.0, 1.3, 2.2), p1: V(-12.2, 1.3, 2.0), t0: V(-14.6, 1.2, 5.8), t1: V(-14.2, 1.2, 5.8) },
+  { name: 'Bar', room: 'bar', fov: 38, p0: V(-11.0, 1.3, 2.2), p1: V(-12.2, 1.3, 2.0), t0: V(-14.6, 1.2, 5.0), t1: V(-14.3, 1.2, 5.0) },
   { name: 'Bedroom', room: 'bedroom', fov: 40, p0: V(-19.7, 1.3, -.7), p1: V(-20.3, 1.25, -1.1), t0: V(-23.2, 1.0, -4.2), t1: V(-23.2, 1.0, -4.2) },
   { name: 'Record den', room: 'den', fov: 40, p0: V(-19.7, 1.3, 6.3), p1: V(-20.5, 1.3, 6.0), t0: V(-23.4, 1.15, 2.6), t1: V(-23.2, 1.15, 2.9) });
 const DUR = 8, FADE = .7;
@@ -852,6 +898,7 @@ let flickHold = 0, time = 0;
 function frame() {
   const dt = Math.min(clock.getDelta(), .05); time += dt;
   if (film) { filmT += dt; filmFrame(filmT); } else controls.update();
+  if (mixer && !reduced) { mixer.update(dt); actorStep(dt); }
   setNeon(time);
   for (const L of lavas) L.m.material.color.setHSL((L.hue + time * .013) % 1, 1, .5).multiplyScalar(1.7);
   platter.rotation.y -= dt * 3.5;
@@ -871,5 +918,5 @@ function frame() {
   composer.render();
 }
 renderer.setAnimationLoop(frame);
-window.__garage = { room: n => { renderer.setAnimationLoop(null); if (film) setFilm(false); lookRoom(n); for (const L of lavas) L.m.material.color.setHSL(L.hue, 1, .5).multiplyScalar(2.2); controls.update(); controls.update(); composer.render(); }, view: (x, y, z) => { renderer.setAnimationLoop(null); setFilm(false); camera.position.set(x, y, z); controls.update(); controls.update(); composer.render(); }, seek: t => { filmT = t; }, still: t => { renderer.setAnimationLoop(null); filmT = t; time = t; filmFrame(t); fadeEl.style.opacity = 0; setNeon(t); composer.render(); } };
+window.__garage = { actor: sec => { for (let i = 0; i < sec * 20; i++) { mixer.update(.05); actorStep(.05); } }, room: n => { renderer.setAnimationLoop(null); if (film) setFilm(false); lookRoom(n); for (const L of lavas) L.m.material.color.setHSL(L.hue, 1, .5).multiplyScalar(2.2); controls.update(); controls.update(); composer.render(); }, view: (x, y, z) => { renderer.setAnimationLoop(null); setFilm(false); camera.position.set(x, y, z); controls.update(); controls.update(); composer.render(); }, seek: t => { filmT = t; }, still: t => { renderer.setAnimationLoop(null); filmT = t; time = t; filmFrame(t); fadeEl.style.opacity = 0; setNeon(t); composer.render(); } };
 </script>
